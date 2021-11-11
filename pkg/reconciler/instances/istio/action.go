@@ -20,6 +20,15 @@ const (
 	istioChart     = "istio-configuration"
 )
 
+type UpdateType string
+
+const (
+	UPGRADE   UpdateType = "upgrade"
+	DOWNGRADE            = "downgrade"
+)
+
+var currentUpdateType UpdateType
+
 type ReconcileAction struct {
 	performer actions.IstioPerformer
 }
@@ -105,12 +114,19 @@ func (a *ReconcileAction) Run(context *service.ActionContext) error {
 		if err != nil {
 			return errors.Wrap(err, "Could not deloy Istio resources")
 		}
-	} else if canUpdate(ver, context.Logger) {
-		context.Logger.Infof("Istio version was detected on the cluster, updating pilot from %s and data plane from %s to version %s...", ver.PilotVersion, ver.DataPlaneVersion, ver.TargetVersion)
+	} else if canUpgradeOrDowngrade(ver, context.Logger) {
+		context.Logger.Infof("Istio version was detected on the cluster, will %s pilot from %s and data plane from %s to version %s...", currentUpdateType, ver.PilotVersion, ver.DataPlaneVersion, ver.TargetVersion)
 
-		err = a.performer.Update(context.KubeClient.Kubeconfig(), manifest.Manifest, context.Logger)
-		if err != nil {
-			return errors.Wrap(err, "Could not update Istio")
+		if currentUpdateType == "upgrade" {
+			err = a.performer.Upgrade(context.KubeClient.Kubeconfig(), manifest.Manifest, context.Logger)
+			if err != nil {
+				return errors.Wrap(err, "Could not upgrade Istio")
+			}
+		} else {
+			err = a.performer.Downgrade(context.KubeClient.Kubeconfig(), manifest.Manifest, context.Logger)
+			if err != nil {
+				return errors.Wrap(err, "Could not downgrade Istio")
+			}
 		}
 
 		err = a.performer.ResetProxy(context.KubeClient.Kubeconfig(), ver, context.Logger)
@@ -220,32 +236,35 @@ func getInstalledVersion(context *service.ActionContext, performer actions.Istio
 	return ver, nil
 }
 
-func canUpdate(ver actions.IstioVersion, logger *zap.SugaredLogger) bool {
+func canUpgradeOrDowngrade(ver actions.IstioVersion, logger *zap.SugaredLogger) bool {
 	clientHelperVersion := newHelperVersionFrom(ver.ClientVersion)
 	targetHelperVersion := newHelperVersionFrom(ver.TargetVersion)
 	pilotHelperVersion := newHelperVersionFrom(ver.PilotVersion)
 	dataPlaneHelperVersion := newHelperVersionFrom(ver.DataPlaneVersion)
+	pilotVsTarget := targetHelperVersion.compare(&pilotHelperVersion)
+	dataPlaneVsTarget := targetHelperVersion.compare(&dataPlaneHelperVersion)
+	currentUpdateType = UPGRADE
 
+	// upgrade checks
 	if !maxOneMinorBehind(clientHelperVersion, targetHelperVersion) {
-		logger.Errorf("Istio could not be updated since the binary version: %s is not compatible with the target version: %s", ver.ClientVersion, ver.TargetVersion)
+		logger.Errorf("Istio could not be upgraded since the binary version: %s is not compatible with the target version: %s", ver.ClientVersion, ver.TargetVersion)
 		return false
 	}
 
-	pilotVsTarget := targetHelperVersion.compare(&pilotHelperVersion)
-	dataPlaneVsTarget := targetHelperVersion.compare(&dataPlaneHelperVersion)
+	if !maxOneMinorBehind(pilotHelperVersion, targetHelperVersion) || !maxOneMinorBehind(dataPlaneHelperVersion, targetHelperVersion) {
+		logger.Errorf("Istio could not be upgraded from pilot: %s and data plane: %s to version: %s - versions different exceed one minor version",
+			ver.PilotVersion, ver.DataPlaneVersion, ver.TargetVersion)
+		return false
+	}
 
+	// downgrade checks
 	if pilotVsTarget == -1 || dataPlaneVsTarget == -1 {
 		if !targetHelperVersion.isDowngradePermitted(&pilotHelperVersion) || !targetHelperVersion.isDowngradePermitted(&dataPlaneHelperVersion) {
 			logger.Errorf("Downgrade detected from pilot: %s and data plane: %s to version: %s - finishing...", ver.PilotVersion, ver.DataPlaneVersion, ver.TargetVersion)
 			return false
 		}
+		currentUpdateType = DOWNGRADE
 		logger.Infof("Valid Downgrade detected from pilot: %s and data plane: %s to version: %s", ver.PilotVersion, ver.DataPlaneVersion, ver.TargetVersion)
-	}
-
-	if !maxOneMinorBehind(pilotHelperVersion, targetHelperVersion) || !maxOneMinorBehind(dataPlaneHelperVersion, targetHelperVersion) {
-		logger.Errorf("Istio could not be updated from pilot: %s and data plane: %s to version: %s - versions different exceed one minor version",
-			ver.PilotVersion, ver.DataPlaneVersion, ver.TargetVersion)
-		return false
 	}
 
 	return true

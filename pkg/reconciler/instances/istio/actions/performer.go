@@ -86,8 +86,11 @@ type IstioPerformer interface {
 	// PatchMutatingWebhook configuration.
 	PatchMutatingWebhook(kubeClient reconcilerKubeClient.Client, logger *zap.SugaredLogger) error
 
-	// Update Istio on the cluster.
-	Update(kubeConfig, manifest string, logger *zap.SugaredLogger) error
+	// Upgrade Istio on the cluster.
+	Upgrade(kubeConfig, manifest string, logger *zap.SugaredLogger) error
+
+	// Downgrade Istio on the cluster.
+	Downgrade(kubeConfig, manifest string, logger *zap.SugaredLogger) error
 
 	// ResetProxy of all Istio sidecars on the cluster.
 	ResetProxy(kubeConfig string, version IstioVersion, logger *zap.SugaredLogger) error
@@ -184,20 +187,38 @@ func (c *DefaultIstioPerformer) PatchMutatingWebhook(kubeClient reconcilerKubeCl
 	return nil
 }
 
-func (c *DefaultIstioPerformer) Update(kubeConfig, manifest string, logger *zap.SugaredLogger) error {
+func (c *DefaultIstioPerformer) Upgrade(kubeConfig, manifest string, logger *zap.SugaredLogger) error {
 	istioOperator, err := extractIstioOperatorContextFrom(manifest)
 	if err != nil {
 		return err
 	}
 
-	logger.Info("Starting Istio update...")
+	logger.Info("Starting Istio upgrade...")
 
 	err = c.commander.Upgrade(istioOperator, kubeConfig, logger)
 	if err != nil {
 		return errors.Wrap(err, "Error occurred when calling istioctl")
 	}
 
-	logger.Info("Istio has been updated successfully")
+	logger.Info("Istio has been upgraded successfully")
+
+	return nil
+}
+
+func (c *DefaultIstioPerformer) Downgrade(kubeConfig, manifest string, logger *zap.SugaredLogger) error {
+	istioOperator, err := extractIstioOperatorContextFrom(manifest)
+	if err != nil {
+		return err
+	}
+
+	logger.Info("Starting Istio downgrade...")
+
+	err = c.commander.Upgrade(istioOperator, kubeConfig, logger)
+	if err != nil {
+		return errors.Wrap(err, "Error occurred when calling istioctl")
+	}
+
+	logger.Info("Istio has been downgraded successfully")
 
 	return nil
 }

@@ -220,12 +220,12 @@ func Test_DefaultIstioPerformer_PatchMutatingWebhook(t *testing.T) {
 
 }
 
-func Test_DefaultIstioPerformer_Update(t *testing.T) {
+func Test_DefaultIstioPerformer_Upgrade(t *testing.T) {
 
 	kubeConfig := "kubeConfig"
 	log := logger.NewLogger(false)
 
-	t.Run("should not update when istio operator could not be found in manifest", func(t *testing.T) {
+	t.Run("should not upgrade when istio operator could not be found in manifest", func(t *testing.T) {
 		// given
 		cmder := istioctlmocks.Commander{}
 		cmder.On("Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger")).Return(errors.New("istioctl error"))
@@ -234,15 +234,15 @@ func Test_DefaultIstioPerformer_Update(t *testing.T) {
 		wrapper := NewDefaultIstioPerformer(&cmder, &proxy, &provider)
 
 		// when
-		err := wrapper.Update(kubeConfig, "", log)
+		err := wrapper.Upgrade(kubeConfig, "", log)
 
 		// then
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Istio Operator definition could not be found")
-		cmder.AssertNotCalled(t, "Update", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger"))
+		cmder.AssertNotCalled(t, "Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger"))
 	})
 
-	t.Run("should not update Istio when istioctl returned an error", func(t *testing.T) {
+	t.Run("should not upgrade Istio when istioctl returned an error", func(t *testing.T) {
 		// given
 		cmder := istioctlmocks.Commander{}
 		cmder.On("Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger")).Return(errors.New("istioctl error"))
@@ -251,7 +251,7 @@ func Test_DefaultIstioPerformer_Update(t *testing.T) {
 		wrapper := NewDefaultIstioPerformer(&cmder, &proxy, &provider)
 
 		// when
-		err := wrapper.Update(kubeConfig, istioManifest, log)
+		err := wrapper.Upgrade(kubeConfig, istioManifest, log)
 
 		// then
 		require.Error(t, err)
@@ -259,7 +259,7 @@ func Test_DefaultIstioPerformer_Update(t *testing.T) {
 		cmder.AssertCalled(t, "Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger"))
 	})
 
-	t.Run("should update Istio when istioctl command was successful", func(t *testing.T) {
+	t.Run("should upgrade Istio when istioctl command was successful", func(t *testing.T) {
 		// given
 		cmder := istioctlmocks.Commander{}
 		cmder.On("Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger")).Return(nil)
@@ -268,7 +268,64 @@ func Test_DefaultIstioPerformer_Update(t *testing.T) {
 		wrapper := NewDefaultIstioPerformer(&cmder, &proxy, &provider)
 
 		// when
-		err := wrapper.Update(kubeConfig, istioManifest, log)
+		err := wrapper.Upgrade(kubeConfig, istioManifest, log)
+
+		// then
+		require.NoError(t, err)
+		cmder.AssertCalled(t, "Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger"))
+	})
+
+}
+
+func Test_DefaultIstioPerformer_Downgrade(t *testing.T) {
+
+	kubeConfig := "kubeConfig"
+	log := logger.NewLogger(false)
+
+	t.Run("should not downgrade when istio operator could not be found in manifest", func(t *testing.T) {
+		// given
+		cmder := istioctlmocks.Commander{}
+		cmder.On("Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger")).Return(errors.New("istioctl error"))
+		proxy := proxymocks.IstioProxyReset{}
+		provider := clientsetmocks.Provider{}
+		wrapper := NewDefaultIstioPerformer(&cmder, &proxy, &provider)
+
+		// when
+		err := wrapper.Downgrade(kubeConfig, "", log)
+
+		// then
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Istio Operator definition could not be found")
+		cmder.AssertNotCalled(t, "Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger"))
+	})
+
+	t.Run("should not downgrade Istio when istioctl returned an error", func(t *testing.T) {
+		// given
+		cmder := istioctlmocks.Commander{}
+		cmder.On("Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger")).Return(errors.New("istioctl error"))
+		proxy := proxymocks.IstioProxyReset{}
+		provider := clientsetmocks.Provider{}
+		wrapper := NewDefaultIstioPerformer(&cmder, &proxy, &provider)
+
+		// when
+		err := wrapper.Downgrade(kubeConfig, istioManifest, log)
+
+		// then
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "istioctl error")
+		cmder.AssertCalled(t, "Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger"))
+	})
+
+	t.Run("should downgrade Istio when istioctl command was successful", func(t *testing.T) {
+		// given
+		cmder := istioctlmocks.Commander{}
+		cmder.On("Upgrade", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("*zap.SugaredLogger")).Return(nil)
+		proxy := proxymocks.IstioProxyReset{}
+		provider := clientsetmocks.Provider{}
+		wrapper := NewDefaultIstioPerformer(&cmder, &proxy, &provider)
+
+		// when
+		err := wrapper.Downgrade(kubeConfig, istioManifest, log)
 
 		// then
 		require.NoError(t, err)
